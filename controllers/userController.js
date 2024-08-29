@@ -1,7 +1,7 @@
-const User = require('../models/userModel');
-const { createObjectCsvWriter } = require('csv-writer');
+const User = require('../models/User');
+const { exportUsersToCSV } = require('../Utils/csvExporter');
 
-// List all users
+// Get all users
 exports.getUsers = async (req, res) => {
   try {
     const users = await User.find({ deleted: false });
@@ -11,24 +11,37 @@ exports.getUsers = async (req, res) => {
   }
 };
 
-// Add a new user
+// Add new user
 exports.addUser = async (req, res) => {
-  const { firstName, lastName, email, password } = req.body;
+  const { email, firstName, lastName, password } = req.body;
+
+  const newUser = new User({
+    email,
+    firstName,
+    lastName,
+    password,
+  });
+
   try {
-    const newUser = new User({ firstName, lastName, email, password });
-    await newUser.save();
-    res.status(201).json(newUser);
+    const user = await newUser.save();
+    res.status(201).json(user);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 };
 
-// Delete a user
+// Delete user
 exports.deleteUser = async (req, res) => {
   const { id } = req.params;
+
   try {
-    await User.findByIdAndUpdate(id, { deleted: true });
-    res.status(200).json({ message: 'User deleted' });
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.deleted = true;
+    await user.save();
+
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -36,21 +49,17 @@ exports.deleteUser = async (req, res) => {
 
 // Export users to CSV
 exports.exportUsers = async (req, res) => {
-  const csvWriter = createObjectCsvWriter({
-    path: 'users.csv',
-    header: [
-      { id: '_id', title: 'ID' },
-      { id: 'email', title: 'EMAIL' },
-      { id: 'firstName', title: 'FIRST_NAME' },
-      { id: 'lastName', title: 'LAST_NAME' }
-    ]
-  });
+  const { ids } = req.body;
 
   try {
-    const users = await User.find({ deleted: false });
-    await csvWriter.writeRecords(users);
-    res.download('users.csv');
+    const users = await User.find({ _id: { $in: ids }, deleted: false });
+    const csv = exportUsersToCSV(users);
+
+    res.setHeader('Content-Disposition', 'attachment; filename=users.csv');
+    res.set('Content-Type', 'text/csv');
+    res.status(200).send(csv);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
